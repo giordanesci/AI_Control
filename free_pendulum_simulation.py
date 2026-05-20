@@ -1,59 +1,37 @@
 """
 Double pendulum simulator 
 
-At the moment there is no control force on the cart (u=0 constant), 
-so the pendulum simply falls down freely according to the initial position 
-(x as initialised) 
+
 """
 from Inverted_double_pendulum import step, _xdot, DEFAULT_PARAMS
 import numpy as np
 import matplotlib.pyplot as plt
-from LinearQuadraticRegulator import LQR 
-from scipy.linalg import solve_continuous_are
+from LinearQuadraticRegulator import get_K_LQR
 from matplotlib.animation import FuncAnimation
 
 
-# Initializing state vector x and parameters
-x = [0, 0, 0.05, 0, 0, 0] # small theta_2 angle
-u = 0 # constant zero control force on the cart for now 
-dt = 0.001
-w = (0.0, 0.0, 0.0) 
+# Initializing state vector x and parameters 
+x_eq = np.zeros(6)        # equilibrium poin or the project
+x = [0, 0, 0.05,0, 0, 0] # [cart position, theta 1, theta 2, x_cart dot, theta 1 dot, theta 2 dot]
+u = 0                     # initial control force on the cart now
+dt = 0.001                # simulation timestep
+w = (0.0, 0.0, 0.0)       # external disturbances
 
-n_steps = 2500
+n_steps = 2500            # milliseconds
 
 # Preallocation for data
 t_hist = np.zeros(n_steps + 1) 
 x_hist = np.zeros((6,n_steps + 1))
 u_hist = np.zeros(n_steps + 1)
-
 x_hist[:,0] = x
 u_hist[0] = u
 t_hist[0] = 0
 
+#____________________________________________________
+# Per-step integrator using LQR at the moment
+#_____________________________________________________
 
-def linearize_continuous(x_eq, u_eq, params=None, eps=1e-6):
-    p = params if params is not None else DEFAULT_PARAMS
-    w = (0.0, 0.0, 0.0)
-    n = len(x_eq)
-    f0 = _xdot(x_eq, u_eq, w, p)
-    
-    A = np.zeros((n, n))
-    for j in range(n):
-        xp = x_eq.copy(); xp[j] += eps
-        A[:, j] = (_xdot(xp, u_eq, w, p) - f0) / eps
-    
-    B = (_xdot(x_eq, u_eq + eps, w, p) - f0) / eps  # shape (6,)
-    return A, B.reshape(-1, 1)
-
-# Set up LQR
-x_eq = np.zeros(6)
-A, B = linearize_continuous(x_eq, 0.0)
-
-Q = np.diag([1, 10, 10, 1, 1, 1])  # penalize angles heavily
-R = np.array([[0.01]])              # cheap control
-
-P = solve_continuous_are(A, B, Q, R)
-K = np.linalg.inv(R) @ B.T @ P
+K = get_K_LQR(x_eq)
 
 for i in range(n_steps):
     x_new = step(x, u, dt, None, w)
@@ -61,10 +39,12 @@ for i in range(n_steps):
     # Controller
     u_new = float((-K @ (np.array(x_new) - x_eq))[0])
 
+    # Update state vectors for plotting
     x_hist[:,i] = x_new
     u_hist[i] = u 
     t_hist[i] = i*dt
 
+    # Reset state vector and action for next step
     x = x_new
     u = u_new
 
@@ -81,7 +61,9 @@ def get_cartesian_tip_pos(x_hist):
 
 x_tip, y_tip = get_cartesian_tip_pos(x_hist)
 
-# Figure (trail in time of the tip of the double pendulum, no floor)
+#_______________________________________________
+# Figures
+#______________________________________________
 t = t_hist
 
 # Figure 1, Static plot
