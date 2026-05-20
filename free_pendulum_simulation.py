@@ -1,13 +1,34 @@
 """
 Double pendulum simulator 
 
+This script is the node in which the loop that spins the simulation of an inverted double pendulum runs. 
+The double pendulum is initialized with the equilibrium position x_eq picked as the upright extended position 
+(there are 2 more unstable configurations and a stable trivial one). 
 
+The dynamics is described by inverted_double_pendulum.py and takes into account full dynamics of a cart with weight 
+and two rods with weight only at their end. 
+It is possible to control the cart with an horizontal force u.
+It is possible to add some disturbances to the cart that at the moment have a dissipation nature, as are dependent
+from a velocity term (to be specified).
+
+After initialization the script loops for each timestep the dynamics and the control response at each step. To change
+the controller, simply comment out its relevant matrix or function, both before the loop and in the loop itself, 
+leaving only one active controller in the form:
+
+    u_new = ... 
+    # u_new = ...
+    # ...
+
+The script also plots two figures of the trajectory in time, one static and one animated
 """
-from Inverted_double_pendulum import step, _xdot, DEFAULT_PARAMS
+
+from Inverted_double_pendulum import step, DEFAULT_PARAMS 
 import numpy as np
 import matplotlib.pyplot as plt
-from LinearQuadraticRegulator import get_K_LQR
+from LQR_functions import get_K_LQR
 from matplotlib.animation import FuncAnimation
+from matplotlib.collections import LineCollection
+from matplotlib.colors import Normalize
 
 
 # Initializing state vector x and parameters 
@@ -17,7 +38,7 @@ u = 0                     # initial control force on the cart now
 dt = 0.001                # simulation timestep
 w = (0.0, 0.0, 0.0)       # external disturbances
 
-n_steps = 2500            # milliseconds
+n_steps = 5000            # milliseconds
 
 # Preallocation for data
 t_hist = np.zeros(n_steps + 1) 
@@ -31,13 +52,13 @@ t_hist[0] = 0
 # Per-step integrator using LQR at the moment
 #_____________________________________________________
 
-K = get_K_LQR(x_eq)
+K = get_K_LQR(x_eq) # Use this for LQR
 
 for i in range(n_steps):
     x_new = step(x, u, dt, None, w)
 
     # Controller
-    u_new = float((-K @ (np.array(x_new) - x_eq))[0])
+    u_new = 0 #float((-K @ (np.array(x_new) - x_eq))[0]) # Use this for LQR
 
     # Update state vectors for plotting
     x_hist[:,i] = x_new
@@ -86,27 +107,55 @@ plt.colorbar(sc, ax=ax1, label="time")
 # FIGURE 2: Animation
 fig2, ax2 = plt.subplots()
 
+fps = 20 
+n = int((1/(dt))/fps)
+
 ax2.set_title("Animation")
-ax2.set_xlim(-0.1, 0.1)
-ax2.set_ylim(0.99, 1.01)
+ax2.set_xlim(-1, 1)
+ax2.set_ylim(-1, 1)
+ax2.grid(True, alpha=0.2)
+
+cmap = plt.cm.viridis
+norm = Normalize(vmin=0, vmax=len(x_tip))
+lc = LineCollection([], cmap=cmap, norm=norm, linewidth=3)
+ax2.add_collection(lc)
 
 line, = ax2.plot([], [], 'b-')
-point, = ax2.plot([], [], 'ro')
+point, = ax2.plot([], [], 'ro', markersize=6)
+
+# Colorbar
+cbar = fig2.colorbar(
+    plt.cm.ScalarMappable(norm=norm, cmap=cmap),
+    ax=ax2
+)
+cbar.set_label("Time [ms]")
 
 def update(frame):
-    idx = frame * 100
-    line.set_data(x_tip[:idx+1], y_tip[:idx+1])
+
+    idx = frame * n
+
+    # Build line segments
+    points = np.array([x_tip[:idx+1], y_tip[:idx+1]]).T.reshape(-1,1,2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+    lc.set_segments(segments)
+
+    # Color progression
+    lc.set_array(np.arange(len(segments)))
+
+    # Moving tip
     point.set_data([x_tip[idx]], [y_tip[idx]])
-    return line, point
+
+    return lc, point
 
 ani = FuncAnimation(
     fig2,
     update,
-    frames=len(x_tip)//100,
-    interval=100,
+    frames=len(x_tip)//n,
+    interval=n, # real time
     blit=True
 )
 
-# ani.save("trajectory.gif", writer="pillow", fps=10)
+ani.save("trajectory.gif", writer="pillow", fps=fps)
 
 plt.show()
